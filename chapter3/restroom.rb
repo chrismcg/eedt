@@ -1,79 +1,204 @@
+# rubocop:disable Metrics/LineLength, Style/Documentation
+
 class Person
-  @@population = []
-
+  attr_reader :duration
   attr_reader :use_duration
-  attr_accessor :frequency
+  attr_reader :chance
+  attr_reader :restroom
+  attr_reader :facility
 
-  def initialize(frequency = 4, use_duration = 1)
-    @frequency = frequency
+  def initialize(use_duration, chance)
     @use_duration = use_duration
-  end
-
-  def self.population
-    @@population
+    @chance = chance
   end
 
   def need_to_go?
-    rand(DURATION) + 1 <= @frequency
+    rand < chance
+  end
+
+  def go_to_restroom(restrooms)
+    restroom = restrooms.min_by(&:queue_size)
+    facility = restroom.facilities.find(&:free?)
+    if facility
+      occupy(restroom, facility)
+    else
+      enter_queue(restroom)
+    end
+  end
+
+  def occupy(restroom, facility)
+    @duration = 1
+    @in_queue = false
+    @using = true
+    @restroom = restroom
+    @facility = facility
+    restroom.leave_queue(self)
+    facility.occupy(self)
+  end
+
+  def enter_queue(restroom)
+    @in_queue = true
+    @using = false
+    @restroom = restroom
+    restroom.enter_queue(self)
+    @facility = nil
+  end
+
+  def vacate
+    facility.vacate
+    @duration = nil
+    @in_queue = false
+    @using = false
+    @restroom = nil
+  end
+
+  def finished?
+    using? && duration > use_duration
+  end
+
+  def using?
+    @using
+  end
+
+  def queuing?
+    @in_queue
+  end
+
+  def tick(restrooms)
+    if using?
+      @duration += 1
+      vacate if finished?
+    elsif queuing?
+      facility = restroom.facilities.find(&:free?)
+      occupy(restroom, facility) if facility
+    elsif need_to_go?
+      go_to_restroom(restrooms)
+    end
   end
 end
 
 class Facility
-  def initialize
-    @occupier = nil
-    @duration = 0
+  attr_reader :restroom
+  attr_reader :occupier
+
+  def initialize(restroom)
+    @restroom = restroom
   end
 
   def occupy(person)
-    unless occupied?
-      @occupier = person
-      @duration = 1
-      Person.population.delete person
-      true
-    else
-      false
-    end
-  end
-
-  def occupied?
-    not @occupier.nil?
+    @occupier = person
   end
 
   def vacate
-    Person.population << @occupier
     @occupier = nil
   end
 
-  def tick
-    if occupied? and @duration > @occupier.use_duration
-      vacate
-      @duration = 0
-    elsif occupied?
-      @duration += 1
-    end
+  def occupied?
+    !@occupier.nil?
+  end
+
+  def free?
+    @occupier.nil?
   end
 end
 
 class Restroom
-  attr_reader :queue
   attr_reader :facilities
+  attr_reader :queue
 
-  def initialize(facilities_per_restroom=3)
+  def initialize(facility_count)
+    @facilities = Array.new(facility_count) { Facility.new(self) }
     @queue = []
-    @facilities = [] # the facilties in this restroom
-    facilities_per_restroom.times { @facilities << Facility.new }
   end
 
-  def enter(person)
-    unoccupied_facility = @facilities.find { |facility| not facility.occupied? }
-    if unoccupied_facility
-      unoccupied_facility.occupy person
-    else
-      @queue << person
-    end
+  def queue_size
+    queue.size
+  end
+
+  def enter_queue(person)
+    queue << person
+  end
+
+  def leave_queue(person)
+    queue.delete(person)
+  end
+end
+
+class Office
+  attr_reader :population
+  attr_reader :restrooms
+
+  def initialize(population_size, restroom_count, facilities_per_restroom, use_duration, chance)
+    @population = Array.new(population_size) { Person.new(use_duration, chance) }
+    @restrooms = Array.new(restroom_count) { Restroom.new(facilities_per_restroom) }
+  end
+
+  def queue_size
+    population.count(&:queuing?)
   end
 
   def tick
-    @facilities.each { |f| f.tick }
+    population.each { |p| p.tick(restrooms) }
+  end
+end
+
+if __FILE__ == $PROGRAM_NAME
+  # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
+  require 'test/unit'
+
+  class TestPerson < Test::Unit::TestCase
+    def setup
+      @duration = 1
+      @normal_chance = 3.0 / 540
+      @full_chance = 1.0
+      @no_chance = 0.0
+    end
+
+    def test_tick_when_facility_empty
+      restroom = Restroom.new(1)
+      facility = restroom.facilities.first
+
+      person1 = Person.new(@duration, @full_chance)
+      assert restroom.queue_size.zero?
+      assert facility.free?
+
+      person1.tick([restroom])
+      assert restroom.queue_size.zero?
+      assert facility.occupied?
+      assert person1.using?
+    end
+
+    def test_tick
+      restroom = Restroom.new(1)
+      facility = restroom.facilities.first
+
+      person1 = Person.new(@duration, @normal_chance)
+      person1.occupy(restroom, facility)
+      assert facility.occupied?
+      refute person1.queuing?
+      assert person1.using?
+
+      person2 = Person.new(@duration, @normal_chance)
+      person2.enter_queue(restroom)
+      assert_equal 1, restroom.queue_size
+      assert person2.queuing?
+      refute person2.using?
+
+      person3 = Person.new(@duration, @full_chance)
+      person4 = Person.new(@duration, @no_chance)
+
+      people = [person1, person2, person3, person4]
+
+      people.each { |person| person.tick([restroom]) }
+
+      refute person1.queuing?
+      refute person1.using?
+      refute person2.queuing?
+      assert person2.using?
+      assert person3.queuing?
+      refute person3.using?
+      refute person4.queuing?
+      refute person4.using?
+    end
   end
 end

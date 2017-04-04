@@ -78,7 +78,7 @@ class Person
       vacate if finished?
     elsif queuing?
       # This means the queue might not be "fair" / fifo but that doesn't matter
-      # for the purposes of this simulation. Could yield hear and let the
+      # for the purposes of this simulation. Could yield here and let the
       # controlling simulation "tick" the restrooms in order to work round this.
       facility = restroom.facilities.find(&:free?)
       occupy(restroom, facility) if facility

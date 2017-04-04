@@ -6,10 +6,13 @@ class Person
   attr_reader :chance
   attr_reader :restroom
   attr_reader :facility
+  attr_reader :occupy_time
+  attr_reader :time
 
   def initialize(use_duration, chance)
     @use_duration = use_duration
     @chance = chance
+    @time = 0
   end
 
   def need_to_go?
@@ -27,7 +30,7 @@ class Person
   end
 
   def occupy(restroom, facility)
-    @duration = 1
+    @occupy_time = time
     @in_queue = false
     @using = true
     @restroom = restroom
@@ -53,7 +56,12 @@ class Person
   end
 
   def finished?
-    using? && duration > use_duration
+    if using?
+      duration = time - occupy_time
+      duration >= use_duration
+    else
+      false
+    end
   end
 
   def using?
@@ -64,11 +72,14 @@ class Person
     @in_queue
   end
 
-  def tick(restrooms)
+  def tick(restrooms, time)
+    @time = time
     if using?
-      @duration += 1
       vacate if finished?
     elsif queuing?
+      # This means the queue might not be "fair" / fifo but that doesn't matter
+      # for the purposes of this simulation. Could yield hear and let the
+      # controlling simulation "tick" the restrooms in order to work round this.
       facility = restroom.facilities.find(&:free?)
       occupy(restroom, facility) if facility
     elsif need_to_go?
@@ -137,8 +148,8 @@ class Office
     population.count(&:queuing?)
   end
 
-  def tick
-    population.each { |p| p.tick(restrooms) }
+  def tick(time)
+    population.each { |p| p.tick(restrooms, time) }
   end
 end
 
@@ -152,35 +163,42 @@ if __FILE__ == $PROGRAM_NAME
       @normal_chance = 3.0 / 540
       @full_chance = 1.0
       @no_chance = 0.0
+      @time = 1
+      @restroom = Restroom.new(1)
+      @facility = @restroom.facilities.first
     end
 
     def test_tick_when_facility_empty
-      restroom = Restroom.new(1)
-      facility = restroom.facilities.first
-
       person1 = Person.new(@duration, @full_chance)
-      assert restroom.queue_size.zero?
-      assert facility.free?
+      assert @restroom.queue_size.zero?
+      assert @facility.free?
 
-      person1.tick([restroom])
-      assert restroom.queue_size.zero?
-      assert facility.occupied?
+      person1.tick([@restroom], @time)
+      assert @restroom.queue_size.zero?
+      assert @facility.occupied?
       assert person1.using?
     end
 
-    def test_tick
-      restroom = Restroom.new(1)
-      facility = restroom.facilities.first
+    def test_tick_when_person_finished
+      person1 = Person.new(@duration, @full_chance)
+      person1.occupy(@restroom, @facility)
 
+      person1.tick([@restroom], @time)
+      assert @restroom.queue_size.zero?
+      refute @facility.occupied?
+      refute person1.using?
+    end
+
+    def test_tick
       person1 = Person.new(@duration, @normal_chance)
-      person1.occupy(restroom, facility)
-      assert facility.occupied?
+      person1.occupy(@restroom, @facility)
+      assert @facility.occupied?
       refute person1.queuing?
       assert person1.using?
 
       person2 = Person.new(@duration, @normal_chance)
-      person2.enter_queue(restroom)
-      assert_equal 1, restroom.queue_size
+      person2.enter_queue(@restroom)
+      assert_equal 1, @restroom.queue_size
       assert person2.queuing?
       refute person2.using?
 
@@ -189,7 +207,7 @@ if __FILE__ == $PROGRAM_NAME
 
       people = [person1, person2, person3, person4]
 
-      people.each { |person| person.tick([restroom]) }
+      people.each { |person| person.tick([@restroom], @time) }
 
       refute person1.queuing?
       refute person1.using?

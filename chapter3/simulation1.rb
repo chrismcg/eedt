@@ -22,9 +22,9 @@ population_range.step(10).each do |population_size|
     chance
   )
 
-  day_length.times do
+  day_length.times do |time|
     data[population_size] << office.queue_size
-    office.tick
+    office.tick(time)
   end
 end
 

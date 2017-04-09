@@ -1,17 +1,24 @@
 class Producer
-  attr_accessor :supply
+  attr_accessor :cost
   attr_accessor :price
-  attr_accessor :supply_increment
   attr_accessor :price_decrement
   attr_accessor :price_increment
-  attr_accessor :cost
+  attr_accessor :supply
+  attr_accessor :supply_increment
+
+  MAX_STARTING_PROFIT = 5
+  MAX_STARTING_SUPPLY = 20
 
   def initialize(cost, supply_increment, price_decrement, price_increment)
-    @supply, @price = 0, 0
+    @supply = 0
+    @price = 0
     @cost = cost
     @supply_increment = supply_increment
     @price_decrement = price_decrement
     @price_increment = price_increment
+
+    @price = cost + rand(MAX_STARTING_PROFIT)
+    @supply = rand(MAX_STARTING_SUPPLY)
   end
 
   def generate_goods
@@ -27,4 +34,3 @@ class Producer
     end
   end
 end
-

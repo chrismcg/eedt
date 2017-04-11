@@ -11,12 +11,13 @@ class Person
 
   def initialize(use_duration, chance)
     @use_duration = use_duration
-    @chance = chance
+    @chance = chance.respond_to?(:call) ? chance.call : chance
     @time = 0
   end
 
-  def need_to_go?
-    rand < chance
+  def need_to_go?(time)
+    current_chance = chance.respond_to?(:call) ? chance.call(time) : chance
+    rand < current_chance
   end
 
   def go_to_restroom(restrooms)
@@ -82,7 +83,7 @@ class Person
       # controlling simulation "tick" the restrooms in order to work round this.
       facility = restroom.facilities.find(&:free?)
       occupy(restroom, facility) if facility
-    elsif need_to_go?
+    elsif need_to_go?(time)
       go_to_restroom(restrooms)
     end
   end
